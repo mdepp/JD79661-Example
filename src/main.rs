@@ -1,10 +1,14 @@
 #![no_std]
 #![no_main]
 
+mod jd79661;
+
 use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::OutputPin;
+use embedded_hal::spi::MODE_0;
+
 #[cfg(target_arch = "riscv32")]
 use panic_halt as _;
 #[cfg(target_arch = "arm")]
@@ -18,6 +22,12 @@ use rp235x_hal as hal;
 
 #[cfg(rp2040)]
 use rp2040_hal as hal;
+
+use hal::Spi;
+use hal::fugit::RateExtU32;
+use hal::gpio::FunctionSpi;
+
+use crate::jd79661::{HEIGHT, JD79661, WIDTH};
 
 // use bsp::entry;
 // use bsp::hal;
@@ -87,15 +97,61 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    // Configure GPIO25 as an output
     let mut led_pin = pins.gpio25.into_push_pull_output();
+    // loop {
+    //     led_pin.set_high().unwrap();
+    //     timer.delay_ms(200);
+    //     led_pin.set_low().unwrap();
+    //     timer.delay_ms(200);
+    // }
+
+    led_pin.set_high().unwrap();
+
+    let sclk = pins.gpio2.into_function::<FunctionSpi>();
+    let mosi = pins.gpio3.into_function::<FunctionSpi>();
+    let spi = Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 12u32.MHz(), 4.MHz(), MODE_0);
+
+    let dc = pins.gpio6.into_push_pull_output();
+    let rst = pins.gpio7.into_push_pull_output();
+    let cs = pins.gpio8.into_push_pull_output();
+    let busy = pins.gpio9.into_pull_down_input();
+
+    let mut screen = JD79661::begin(
+        spi,
+        dc.into_dyn_pin(),
+        rst.into_dyn_pin(),
+        cs.into_dyn_pin(),
+        busy.into_dyn_pin(),
+    );
+
+    screen.power_up(&mut timer);
+
+    let mut buffer: [u8; _] = [0; 8000];
+    for x in 0..WIDTH / 4 {
+        for y in 0..HEIGHT {
+            let i = y * WIDTH / 4 + x;
+            let mut data = 0;
+            if x < WIDTH / 8 {
+                data ^= 0b01010101;
+            }
+            if y < HEIGHT / 2 {
+                data ^= 0b10101010;
+            }
+            buffer[i] = data;
+        }
+    }
+
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        timer.delay_ms(200);
-        info!("off!");
         led_pin.set_low().unwrap();
-        timer.delay_ms(200);
+
+        screen.write_buffer(&buffer);
+        screen.update(&mut timer);
+        timer.delay_ms(1000);
+
+        led_pin.set_high().unwrap();
+        screen.write_buffer(&[0b10101010; 8000]);
+        screen.update(&mut timer);
+        timer.delay_ms(1000);
     }
 }
 

@@ -1,8 +1,12 @@
 {
-  "rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
+  "rust-analyzer.cargo.target": "thumbv6m-none-eabi",
   "rust-analyzer.check.allTargets": false,
   "editor.formatOnSave": true,
   "files.exclude": {
     ".pico-rs": true
-  }
+  },
+  "rust-analyzer.cargo.cfgs": [
+    "debug_assertions",
+    "miri"
+  ]
 }
