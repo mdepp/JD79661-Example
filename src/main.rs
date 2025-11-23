@@ -131,10 +131,10 @@ fn main() -> ! {
         for y in 0..HEIGHT {
             let i = y * WIDTH / 4 + x;
             let mut data = 0;
-            if x < WIDTH/8 {
+            if x < WIDTH / 8 {
                 data ^= 0b01010101;
             }
-            if y < HEIGHT/2 {
+            if y < HEIGHT / 2 {
                 data ^= 0b10101010;
             }
             buffer[i] = data;
@@ -147,8 +147,6 @@ fn main() -> ! {
         screen.write_buffer(&buffer);
         screen.update(&mut timer);
         timer.delay_ms(1000);
-
-        loop {}
 
         led_pin.set_high().unwrap();
         screen.write_buffer(&[0b10101010; 8000]);
