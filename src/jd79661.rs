@@ -1,11 +1,17 @@
 use cortex_m::prelude::_embedded_hal_blocking_spi_Write;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
+
+#[cfg(rp2350)]
 use rp235x_hal as hal;
-use rp235x_hal::gpio;
-use rp235x_hal::gpio::DynPinId;
-use rp235x_hal::gpio::Pin;
-use rp235x_hal::spi;
+
+#[cfg(rp2040)]
+use rp2040_hal as hal;
+
+use hal::gpio;
+use hal::gpio::DynPinId;
+use hal::gpio::Pin;
+use hal::spi;
 
 type CommandData<'a> = (u8, &'a [u8]);
 
@@ -48,7 +54,7 @@ impl<'a> From<&'a Command<'a>> for CommandData<'a> {
     }
 }
 
-// rp235x_hal likes to use infallible results and I don't really want to
+// rp2040_hal likes to use infallible results and I don't really want to
 // propagate that across the entire program. So add a trait to unwrap such
 // results without accidentally unwrapping anything else.
 trait UnwrapInf {
