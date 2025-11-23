@@ -1,10 +1,12 @@
 #![no_std]
 #![no_main]
 
+mod jd79661;
+
 use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::OutputPin;
+use embedded_hal::spi::MODE_0;
 #[cfg(target_arch = "riscv32")]
 use panic_halt as _;
 #[cfg(target_arch = "arm")]
@@ -15,9 +17,14 @@ use hal::entry;
 
 #[cfg(rp2350)]
 use rp235x_hal as hal;
+use rp235x_hal::Spi;
+use rp235x_hal::fugit::RateExtU32;
+use rp235x_hal::gpio::FunctionSpi;
 
 #[cfg(rp2040)]
 use rp2040_hal as hal;
+
+use crate::jd79661::JD79661;
 
 // use bsp::entry;
 // use bsp::hal;
@@ -87,15 +94,32 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    // Configure GPIO25 as an output
-    let mut led_pin = pins.gpio25.into_push_pull_output();
+    let sclk = pins.gpio2.into_function::<FunctionSpi>();
+    let mosi = pins.gpio3.into_function::<FunctionSpi>();
+    let spi =
+        Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 12u32.MHz(), 4u32.MHz(), MODE_0);
+
+    let dc = pins.gpio6.into_push_pull_output();
+    let rst = pins.gpio7.into_push_pull_output();
+    let cs = pins.gpio8.into_push_pull_output();
+    let busy = pins.gpio9.into_pull_down_input();
+
+    let mut screen = JD79661::begin(
+        spi,
+        dc.into_dyn_pin(),
+        rst.into_dyn_pin(),
+        cs.into_dyn_pin(),
+        busy.into_dyn_pin(),
+    );
+
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        timer.delay_ms(200);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        timer.delay_ms(200);
+        screen.write_buffer(&[0u8; 8000]);
+        screen.sleeping_update(&mut timer);
+        timer.delay_ms(1000);
+
+        screen.write_buffer(&[1u8; 8000]);
+        screen.sleeping_update(&mut timer);
+        timer.delay_ms(1000);
     }
 }
 
