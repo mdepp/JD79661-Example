@@ -27,7 +27,7 @@ use hal::Spi;
 use hal::fugit::RateExtU32;
 use hal::gpio::FunctionSpi;
 
-use crate::jd79661::JD79661;
+use crate::jd79661::{HEIGHT, JD79661, WIDTH};
 
 // use bsp::entry;
 // use bsp::hal;
@@ -97,7 +97,7 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    // let mut led_pin = pins.gpio16.into_push_pull_output();
+    let mut led_pin = pins.gpio25.into_push_pull_output();
     // loop {
     //     led_pin.set_high().unwrap();
     //     timer.delay_ms(200);
@@ -105,10 +105,11 @@ fn main() -> ! {
     //     timer.delay_ms(200);
     // }
 
+    led_pin.set_high().unwrap();
+
     let sclk = pins.gpio2.into_function::<FunctionSpi>();
     let mosi = pins.gpio3.into_function::<FunctionSpi>();
-    let spi =
-        Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 4u32.MHz(), 2u32.MHz(), MODE_0);
+    let spi = Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 12u32.MHz(), 4.MHz(), MODE_0);
 
     let dc = pins.gpio6.into_push_pull_output();
     let rst = pins.gpio7.into_push_pull_output();
@@ -123,12 +124,34 @@ fn main() -> ! {
         busy.into_dyn_pin(),
     );
 
+    screen.power_up(&mut timer);
+
+    let mut buffer: [u8; _] = [0; 8000];
+    for x in 0..WIDTH / 4 {
+        for y in 0..HEIGHT {
+            let i = y * WIDTH / 4 + x;
+            let mut data = 0;
+            if x < WIDTH/8 {
+                data ^= 0b01010101;
+            }
+            if y < HEIGHT/2 {
+                data ^= 0b10101010;
+            }
+            buffer[i] = data;
+        }
+    }
+
     loop {
-        screen.write_buffer(&[0u8; 8000]);
+        led_pin.set_low().unwrap();
+
+        screen.write_buffer(&buffer);
         screen.update(&mut timer);
         timer.delay_ms(1000);
 
-        screen.write_buffer(&[0xFFu8; 8000]);
+        loop {}
+
+        led_pin.set_high().unwrap();
+        screen.write_buffer(&[0b10101010; 8000]);
         screen.update(&mut timer);
         timer.delay_ms(1000);
     }

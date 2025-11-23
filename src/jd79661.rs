@@ -73,7 +73,7 @@ impl<T> UnwrapInf for Result<T, core::convert::Infallible> {
 
 const START_SEQUENCE: &[Command] = &[
     Command::Misc(0x4D, &[0x78]),
-    Command::PSR(&[0x8F, 0x29]), // PSR, Display resolution is 128x250
+    Command::PSR(&[0x8F, 0x29]), // PSR, Display resolution is 128x250; scan up first line G1->G2, shift right first data S1->S2
     Command::PWR(&[0x07, 0x00, 0, 0, 0, 0]), // PWR
     Command::Misc(0x03, &[0x10, 0x54, 0x44]), // POFS
     Command::BTST(&[0x05, 0x00, 0x3F, 0x0A, 0x25, 0x12, 0x1A]),
@@ -89,9 +89,9 @@ const START_SEQUENCE: &[Command] = &[
     Command::PON,
 ];
 
-const WIDTH: usize = 128;
-const HEIGHT: usize = 250;
-const PIXDEPTH: usize = 2;
+pub const WIDTH: usize = 128;
+pub const HEIGHT: usize = 250;
+pub const PIXDEPTH: usize = 2;
 
 pub struct JD79661<D, P>
 where
