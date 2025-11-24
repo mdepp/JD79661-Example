@@ -1,17 +1,7 @@
-use cortex_m::prelude::_embedded_hal_blocking_spi_Write;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
-
-#[cfg(rp2350)]
-use rp235x_hal as hal;
-
-#[cfg(rp2040)]
-use rp2040_hal as hal;
-
-use hal::gpio;
-use hal::gpio::DynPinId;
-use hal::gpio::Pin;
-use hal::spi;
+use embedded_hal::spi;
+use embedded_hal::spi::SpiDevice;
 
 type CommandData<'a> = (u8, &'a [u8]);
 
@@ -54,23 +44,6 @@ impl<'a> From<&'a Command<'a>> for CommandData<'a> {
     }
 }
 
-// rp2040_hal likes to use infallible results and I don't really want to
-// propagate that across the entire program. So add a trait to unwrap such
-// results without accidentally unwrapping anything else.
-trait UnwrapInf {
-    type Output;
-
-    fn unwrap_inf(self) -> Self::Output;
-}
-
-impl<T> UnwrapInf for Result<T, core::convert::Infallible> {
-    type Output = T;
-
-    fn unwrap_inf(self) -> Self::Output {
-        self.unwrap()
-    }
-}
-
 const START_SEQUENCE: &[Command] = &[
     Command::Misc(0x4D, &[0x78]),
     Command::PSR(&[0x8F, 0x29]), // PSR, Display resolution is 128x250; scan up first line G1->G2, shift right first data S1->S2
@@ -93,103 +66,158 @@ pub const WIDTH: usize = 128;
 pub const HEIGHT: usize = 250;
 pub const PIXDEPTH: usize = 2;
 
-pub struct JD79661<D, P>
+pub struct JD79661<SPI, DC, RST, BUSY>
 where
-    D: spi::SpiDevice,
-    P: spi::ValidSpiPinout<D>,
+    SPI: SpiDevice,
+    DC: OutputPin,
+    RST: OutputPin,
+    BUSY: InputPin,
 {
-    spi: hal::Spi<spi::Enabled, D, P>,
-    dc_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-    rst_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-    cs_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-    busy_pin: Pin<DynPinId, gpio::FunctionSioInput, gpio::PullDown>,
+    spi: SPI,
+    dc_pin: DC,
+    rst_pin: RST,
+    busy_pin: BUSY,
 }
 
-impl<D, P> JD79661<D, P>
+impl<SPI, DC, RST, BUSY, E> JD79661<SPI, DC, RST, BUSY>
 where
-    D: spi::SpiDevice,
-    P: spi::ValidSpiPinout<D>,
+    SPI: SpiDevice<Error = E>,
+    DC: OutputPin<Error = E>,
+    RST: OutputPin<Error = E>,
+    BUSY: InputPin<Error = E>,
+    E: embedded_hal::digital::Error,
 {
-    pub fn begin(
-        spi: hal::Spi<spi::Enabled, D, P>,
-        dc_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-        rst_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-        mut cs_pin: Pin<DynPinId, gpio::FunctionSioOutput, gpio::PullDown>,
-        busy_pin: Pin<DynPinId, gpio::FunctionSioInput, gpio::PullDown>,
-    ) -> Self {
-        cs_pin.set_high().unwrap_inf();
-
-        Self {
+    pub fn begin(spi: SPI, dc_pin: DC, rst_pin: RST, busy_pin: BUSY) -> Result<Self, E> {
+        Ok(Self {
             spi,
             dc_pin,
             rst_pin,
-            cs_pin,
             busy_pin,
-        }
+        })
     }
 
-    pub fn hardware_reset(&mut self, timer: &mut impl DelayNs) {
-        self.rst_pin.set_high().unwrap_inf();
+    pub fn hardware_reset(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
+        self.rst_pin.set_high()?;
         timer.delay_ms(20);
-        self.rst_pin.set_low().unwrap_inf();
+        self.rst_pin.set_low()?;
         timer.delay_ms(40);
-        self.rst_pin.set_high().unwrap_inf();
+        self.rst_pin.set_high()?;
         timer.delay_ms(50);
+
+        Ok(())
     }
 
-    fn busy_wait(&mut self, timer: &mut impl DelayNs) {
-        while self.busy_pin.is_low().unwrap_inf() {
+    fn busy_wait(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
+        while self.busy_pin.is_low()? {
             timer.delay_ms(10);
         }
+
+        Ok(())
     }
 
-    pub fn power_up(&mut self, timer: &mut impl DelayNs) {
-        self.hardware_reset(timer);
-        self.busy_wait(timer);
+    pub fn power_up(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
+        self.hardware_reset(timer)?;
+        self.busy_wait(timer)?;
 
         timer.delay_ms(10);
-        self.command_list(START_SEQUENCE);
-        self.busy_wait(timer);
+        self.command_list(START_SEQUENCE)?;
+        self.busy_wait(timer)?;
+
+        Ok(())
     }
 
-    pub fn power_down(&mut self, timer: &mut impl DelayNs) {
-        self.command_list(&[Command::POF]);
-        self.busy_wait(timer);
-        self.command_list(&[Command::DSLP]);
+    pub fn power_down(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
+        self.command_list(&[Command::POF])?;
+        self.busy_wait(timer)?;
+        self.command_list(&[Command::DSLP])?;
         timer.delay_ms(100);
+
+        Ok(())
     }
 
-    pub fn update(&mut self, timer: &mut impl DelayNs) {
-        self.command_list(&[Command::DRF(&[0x00])]);
-        self.busy_wait(timer);
+    pub fn update(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
+        self.command_list(&[Command::DRF(&[0x00])])?;
+        self.busy_wait(timer)?;
+
+        Ok(())
     }
 
-    pub fn sleeping_update(&mut self, timer: &mut impl DelayNs) {
+    pub fn sleeping_update(&mut self, timer: &mut impl DelayNs) -> Result<(), E> {
         // PON -> DRF -> POF
-        self.command_list(&[Command::AUTO(&[0xA5])]);
-        self.busy_wait(timer);
+        self.command_list(&[Command::AUTO(&[0xA5])])?;
+        self.busy_wait(timer)?;
+
+        Ok(())
     }
 
-    fn command_list(&mut self, commands: &[Command]) {
+    fn command_list(&mut self, commands: &[Command]) -> Result<(), E> {
         for command in commands {
             let (c, d) = CommandData::from(command);
 
-            // XXX Some of this is probably unnecessary if this spi driver
-            // manages the transaction differently.
-            self.cs_pin.set_high().unwrap_inf();
-            self.dc_pin.set_low().unwrap_inf();
-            self.cs_pin.set_low().unwrap_inf();
+            self.dc_pin.set_low()?;
+            self.spi.write(&[c])?;
 
-            self.spi.write(&[c]).unwrap_inf();
-
-            self.dc_pin.set_high().unwrap_inf();
-            self.spi.write(d).unwrap_inf();
-
-            self.cs_pin.set_high().unwrap_inf();
+            self.dc_pin.set_high()?;
+            self.spi.write(d)?;
         }
+
+        Ok(())
     }
 
-    pub fn write_buffer(&mut self, buffer: &[u8; WIDTH * HEIGHT * PIXDEPTH / 8]) {
-        self.command_list(&[Command::DTM(buffer.as_slice()), Command::DSP]);
+    pub fn write_buffer(&mut self, buffer: &[u8; WIDTH * HEIGHT * PIXDEPTH / 8]) -> Result<(), E> {
+        self.command_list(&[Command::DTM(buffer.as_slice()), Command::DSP])
+    }
+}
+
+/**
+A simple SPI device that owns the entire SPI bus. You should probably use a
+generic SPI device if you can, but `rp2040_hal` does not provide one so I made
+this as a substitute.
+*/
+pub struct ExclusiveSpiDevice<SPI, CS, Timer> {
+    spi: SPI,
+    cs: CS,
+    timer: Timer,
+}
+
+impl<SPI, CS, Timer> ExclusiveSpiDevice<SPI, CS, Timer> {
+    pub fn new(spi: SPI, cs: CS, timer: Timer) -> Self {
+        Self { spi, cs, timer }
+    }
+}
+
+impl<SPI, CS, Timer, E> spi::ErrorType for ExclusiveSpiDevice<SPI, CS, Timer>
+where
+    SPI: spi::SpiBus<Error = E>,
+    CS: OutputPin<Error = E>,
+    E: spi::Error,
+{
+    type Error = E;
+}
+
+impl<SPI, CS, Timer, E> SpiDevice for ExclusiveSpiDevice<SPI, CS, Timer>
+where
+    SPI: spi::SpiBus<Error = E>,
+    CS: OutputPin<Error = E>,
+    Timer: DelayNs,
+    E: spi::Error,
+{
+    fn transaction(
+        &mut self,
+        operations: &mut [spi::Operation<'_, u8>],
+    ) -> Result<(), Self::Error> {
+        for operation in operations {
+            self.cs.set_low()?;
+            match operation {
+                spi::Operation::Read(words) => self.spi.read(words)?,
+                spi::Operation::Write(words) => self.spi.write(words)?,
+                spi::Operation::Transfer(read, write) => self.spi.transfer(read, write)?,
+                spi::Operation::TransferInPlace(words) => self.spi.transfer_in_place(words)?,
+                spi::Operation::DelayNs(ns) => self.timer.delay_ns(*ns),
+            }
+            self.cs.set_high()?;
+        }
+
+        Ok(())
     }
 }
