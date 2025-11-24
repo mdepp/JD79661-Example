@@ -7,7 +7,7 @@ use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::OutputPin;
-use embedded_hal::spi::MODE_0;
+use embedded_hal::spi;
 
 #[cfg(target_arch = "riscv32")]
 use panic_halt as _;
@@ -27,7 +27,7 @@ use hal::Spi;
 use hal::fugit::RateExtU32;
 use hal::gpio::FunctionSpi;
 
-use crate::jd79661::{HEIGHT, JD79661, WIDTH};
+use crate::jd79661::{ExclusiveSpiDevice, HEIGHT, JD79661, WIDTH};
 
 // use bsp::entry;
 // use bsp::hal;
@@ -61,6 +61,13 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 /// an infinite loop. If there is an LED connected to that pin, it will blink.
 #[entry]
 fn main() -> ! {
+    let _ = _main();
+    loop {}
+}
+
+// Do the actual logic in a helper function as it's more convenient to return
+// a result
+fn _main() -> Result<(), core::convert::Infallible> {
     info!("Program start");
     // Grab our singleton objects
     let mut pac = hal::pac::Peripherals::take().unwrap();
@@ -105,11 +112,12 @@ fn main() -> ! {
     //     timer.delay_ms(200);
     // }
 
-    led_pin.set_high().unwrap();
+    led_pin.set_high()?;
 
     let sclk = pins.gpio2.into_function::<FunctionSpi>();
     let mosi = pins.gpio3.into_function::<FunctionSpi>();
-    let spi = Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 12u32.MHz(), 4.MHz(), MODE_0);
+    let spi: Spi<_, _, _, 8> =
+        Spi::new(pac.SPI0, (mosi, sclk)).init(&mut pac.RESETS, 12u32.MHz(), 4.MHz(), spi::MODE_0);
 
     let dc = pins.gpio6.into_push_pull_output();
     let rst = pins.gpio7.into_push_pull_output();
@@ -117,14 +125,13 @@ fn main() -> ! {
     let busy = pins.gpio9.into_pull_down_input();
 
     let mut screen = JD79661::begin(
-        spi,
+        ExclusiveSpiDevice::new(spi, cs, timer),
         dc.into_dyn_pin(),
         rst.into_dyn_pin(),
-        cs.into_dyn_pin(),
         busy.into_dyn_pin(),
-    );
+    )?;
 
-    screen.power_up(&mut timer);
+    screen.power_up(&mut timer)?;
 
     let mut buffer: [u8; _] = [0; 8000];
     for x in 0..WIDTH / 4 {
@@ -141,18 +148,13 @@ fn main() -> ! {
         }
     }
 
-    loop {
-        led_pin.set_low().unwrap();
+    led_pin.set_low()?;
 
-        screen.write_buffer(&buffer);
-        screen.update(&mut timer);
-        timer.delay_ms(1000);
+    screen.write_buffer(&buffer)?;
+    screen.update(&mut timer)?;
+    timer.delay_ms(1000);
 
-        led_pin.set_high().unwrap();
-        screen.write_buffer(&[0b10101010; 8000]);
-        screen.update(&mut timer);
-        timer.delay_ms(1000);
-    }
+    Ok(())
 }
 
 /// Program metadata for `picotool info`
