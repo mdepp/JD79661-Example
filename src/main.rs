@@ -3,9 +3,16 @@
 
 mod exclusive_spi_device;
 mod jd79661;
+mod jd79661_display;
 
 use defmt::*;
 use defmt_rtt as _;
+use embedded_graphics::Drawable;
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::mono_font::ascii::FONT_8X13_BOLD;
+use embedded_graphics::prelude::{Dimensions, Primitive};
+use embedded_graphics::primitives::PrimitiveStyle;
+use embedded_graphics::text::{Alignment, Text};
 use embedded_hal::spi;
 
 #[cfg(target_arch = "riscv32")]
@@ -28,7 +35,8 @@ use hal::gpio::FunctionSpi;
 
 use crate::{
     exclusive_spi_device::ExclusiveSpiDevice,
-    jd79661::{HEIGHT, JD79661, WIDTH},
+    jd79661::JD79661,
+    jd79661_display::{JD79661Color, JD79661Display},
 };
 
 // use bsp::entry;
@@ -120,22 +128,22 @@ fn _main() -> Result<(), core::convert::Infallible> {
 
     screen.power_up(&mut timer)?;
 
-    let mut buffer: [u8; _] = [0; 8000];
-    for x in 0..WIDTH / 4 {
-        for y in 0..HEIGHT {
-            let i = y * WIDTH / 4 + x;
-            let mut data = 0;
-            if x < WIDTH / 8 {
-                data ^= 0b01010101;
-            }
-            if y < HEIGHT / 2 {
-                data ^= 0b10101010;
-            }
-            buffer[i] = data;
-        }
-    }
+    let mut display = JD79661Display::default();
+    display
+        .bounding_box()
+        .into_styled(PrimitiveStyle::with_fill(JD79661Color::Black))
+        .draw(&mut display)?;
 
-    screen.write_buffer(&buffer)?;
+    let text = "Hello, world";
+    Text::with_alignment(
+        text,
+        display.bounding_box().center(),
+        MonoTextStyle::new(&FONT_8X13_BOLD, JD79661Color::White),
+        Alignment::Center,
+    )
+    .draw(&mut display)?;
+
+    screen.write_buffer(display.buffer())?;
     screen.update_deepsleep(&mut timer)?;
     Ok(())
 }
