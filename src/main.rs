@@ -5,6 +5,7 @@ mod calendar;
 mod exclusive_spi_device;
 mod jd79661;
 mod jd79661_display;
+mod rtclock;
 
 use calendar::moon;
 use defmt::*;
@@ -37,6 +38,7 @@ use hal::Spi;
 use hal::fugit::RateExtU32;
 use hal::gpio::FunctionSpi;
 
+use crate::rtclock::RealTimeClock;
 use crate::{
     exclusive_spi_device::ExclusiveSpiDevice,
     jd79661::JD79661,
@@ -79,23 +81,31 @@ fn main() -> ! {
     loop {}
 }
 
-struct RealTimeClock {
-    instant: TimerInstantU64<1_000_000>,
-    timestamp: u64,
+struct TimerClock {
+    reference_instant: TimerInstantU64<1_000_000>,
+    reference_timestamp: u64,
+    timer: hal::Timer,
 }
 
-impl RealTimeClock {
+impl TimerClock {
     fn new(timer: hal::Timer, timestamp: u64) -> Self {
         Self {
-            instant: timer.get_counter(),
-            timestamp,
+            reference_instant: timer.get_counter(),
+            reference_timestamp: timestamp,
+            timer,
         }
     }
 
-    fn get_timestamp(&self, timer: hal::Timer) -> u64 {
-        let d1 = timer.get_counter().duration_since_epoch().to_secs();
-        let d2 = self.instant.duration_since_epoch().to_secs();
-        d1 - d2 + self.timestamp
+    fn get_timestamp(&self) -> u64 {
+        let d1 = self.timer.get_counter().duration_since_epoch().to_secs();
+        let d2 = self.reference_instant.duration_since_epoch().to_secs();
+        d1 - d2 + self.reference_timestamp
+    }
+}
+
+impl rtclock::RealTimeClock for TimerClock {
+    fn get_time(&self) -> rtclock::InstantSecs {
+        rtclock::Instant::from_ticks(self.get_timestamp())
     }
 }
 
@@ -138,7 +148,7 @@ fn _main() -> Result<(), core::convert::Infallible> {
         &mut pac.RESETS,
     );
 
-    let clock = RealTimeClock::new(timer, env!("BUILD_TIMESTAMP").parse().unwrap());
+    let clock = TimerClock::new(timer, env!("BUILD_TIMESTAMP").parse().unwrap());
 
     let sclk = pins.gpio2.into_function::<FunctionSpi>();
     let mosi = pins.gpio3.into_function::<FunctionSpi>();
@@ -162,7 +172,7 @@ fn _main() -> Result<(), core::convert::Infallible> {
             .into_styled(PrimitiveStyle::with_fill(JD79661Color::Black))
             .draw(&mut display)?;
 
-        let moon_phase = moon::get_phase(clock.get_timestamp(timer));
+        let moon_phase = moon::get_phase(clock.get_time());
         let moon_phase_label = moon::get_phase_label(moon_phase);
         let moon_illumination = moon::get_illumination(moon_phase);
 

@@ -1,17 +1,18 @@
 pub mod moon {
+    use crate::rtclock;
 
     // 2.551442882×10^6 seconds
     const AVG_SYNODIC_MONTH_SECS: u64 = 2_551_443;
 
     // https://aa.usno.navy.mil/calculated/moon/fraction?year=2025&task=00&tz=0.00&tz_sign=-1&tz_label=false&submit=Get+Data
     const REFERENCE_PHASE: f64 = 0.0;
-    const REFERENCE_TIMESTAMP: u64 = 1763596800; // Nov 20, 2025 midnight UTC
+    const REFERENCE_TIMESTAMP: rtclock::InstantSecs = rtclock::InstantSecs::from_ticks(1763596800); // Nov 20, 2025 midnight UTC
 
     /// Gets the phase of the moon as a float [0, 1), representing the fraction of
     /// the way through the current lunar cycle from new to full to new again. Note
     /// that this is *not* the same as the fractional illumination.
-    pub fn get_phase(timestamp: u64) -> f64 {
-        let second_since_reference = timestamp - REFERENCE_TIMESTAMP;
+    pub fn get_phase(instant: rtclock::InstantSecs) -> f64 {
+        let second_since_reference = (instant - REFERENCE_TIMESTAMP).to_secs();
         let remainder = second_since_reference % AVG_SYNODIC_MONTH_SECS;
         let phase_offset = (remainder as f64) / (AVG_SYNODIC_MONTH_SECS as f64);
         let mut phase = REFERENCE_PHASE + phase_offset;
