@@ -21,3 +21,10 @@ or locally:
 make run-simulator  # or simply "cargo run"
 ```
 
+### Build environment, etc
+
+The `rust-analyzer.cargo.target` key in `.vscode/settings.json` configures the
+target that the vscode rust-analyzer extension uses to make its diagnostics.
+By default this is set up for the raspberry pi pico, which means it'll show a
+bunch of errors in the `simulator` package. So when you're modifying the
+`simulator` package you probably want to temporarily comment out that line.
