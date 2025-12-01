@@ -52,11 +52,18 @@ fn main() {
         println!("cargo:rerun-if-changed=rp2350.x");
     }
 
-    let re = Regex::new(r"target = .*").unwrap();
-    let config_toml = include_str!(".cargo/config.toml");
-    let result = re.replace(config_toml, format!("target = \"{}\"", target));
-    let mut f = File::create(".cargo/config.toml").unwrap();
-    f.write_all(result.as_bytes()).unwrap();
+    // XXX Previously the build script would use this target to modify
+    // config.toml. This is probably not a good idea, especially not when other
+    // packages can be using a different target. Instead, shortcircuit here if
+    // we're using the wrong target.
+    let configured_target = std::env::var("TARGET").unwrap();
+    if configured_target != target {
+        println!(
+            "cargo::error=Bad target: According to .pico-rs, `simulator` must \
+            be built using target `{target}`. Instead, target \
+            `{configured_target}` is configured."
+        )
+    }
 
     // The file `rp2350_riscv.x` is what we specify in `.cargo/config.toml` for
     // RISC-V builds

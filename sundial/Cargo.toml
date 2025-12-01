@@ -17,6 +17,7 @@ defmt-rtt = "1"
 embedded-graphics = "0.8.1"
 fugit = "0.3.9"
 format_no_std = "1.2.0"
+common = { path = "../common" }
 
 [target.'cfg( target_arch = "arm" )'.dependencies]
 panic-probe = { version = "1", features = ["print-defmt"] }

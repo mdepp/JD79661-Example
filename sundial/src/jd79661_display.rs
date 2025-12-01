@@ -1,9 +1,7 @@
+use common::theme::Theme;
 use embedded_graphics::{pixelcolor::raw::RawU2, prelude::*, primitives::Rectangle};
 
-use crate::{
-    jd79661::{HEIGHT, PIXDEPTH, WIDTH},
-    theme::Theme,
-};
+use crate::jd79661::{HEIGHT, PIXDEPTH, WIDTH};
 
 /// embedded_graphics support for the JD79661
 

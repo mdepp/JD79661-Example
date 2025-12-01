@@ -1,14 +1,12 @@
 #![no_std]
 #![no_main]
 
-mod calendar;
 mod exclusive_spi_device;
 mod jd79661;
 mod jd79661_display;
-mod rtclock;
-mod theme;
 
-use calendar::moon;
+use common::calendar::moon;
+use common::{rtclock, theme};
 use defmt::*;
 use defmt_rtt as _;
 use embedded_graphics::mono_font::MonoTextStyle;
