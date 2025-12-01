@@ -18,6 +18,6 @@ make run-sundial
 or locally:
 
 ```Makefile
-make run-simulator
+make run-simulator  # or simply "cargo run"
 ```
 
