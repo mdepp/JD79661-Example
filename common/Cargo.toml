@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+embedded-graphics = "0.8.1"
+format_no_std = "1.2.0"
 fugit = "0.3.9"

@@ -5,15 +5,10 @@ mod exclusive_spi_device;
 mod jd79661;
 mod jd79661_display;
 
-use common::calendar::moon;
-use common::{rtclock, theme};
+use common::logic;
+use common::rtclock;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_graphics::mono_font::MonoTextStyle;
-use embedded_graphics::mono_font::ascii::FONT_8X13_BOLD;
-use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::PrimitiveStyle;
-use embedded_graphics::text::{Alignment, Text};
 use embedded_hal::delay::DelayNs;
 use embedded_hal::spi;
 use fugit::TimerInstantU64;
@@ -37,7 +32,6 @@ use hal::fugit::RateExtU32;
 use hal::gpio::FunctionSpi;
 
 use crate::jd79661_display::JD79661Theme;
-use crate::rtclock::RealTimeClock;
 use crate::{
     exclusive_spi_device::ExclusiveSpiDevice, jd79661::JD79661, jd79661_display::JD79661Display,
 };
@@ -165,50 +159,13 @@ fn _main() -> Result<(), core::convert::Infallible> {
     let theme = JD79661Theme::new();
 
     loop {
-        draw_frame(&mut display, &theme, &clock)?;
+        logic::draw_frame(&mut display, &theme, &clock)?;
 
         screen.write_buffer(display.buffer())?;
         screen.update_sleep(&mut timer)?;
 
         timer.delay_ms(1000 * 3600); // Wait an hour
     }
-}
-
-pub fn draw_frame<Color: PixelColor, Error>(
-    draw_target: &mut impl DrawTarget<Color = Color, Error = Error>,
-    theme: &impl theme::Theme<Color = Color>,
-    clock: &impl RealTimeClock,
-) -> Result<(), Error> {
-    draw_target
-        .bounding_box()
-        .into_styled(PrimitiveStyle::with_fill(theme.background()))
-        .draw(draw_target)?;
-
-    let moon_phase = moon::get_phase(clock.get_time());
-    let moon_phase_label = moon::get_phase_label(moon_phase);
-    let moon_illumination = moon::get_illumination(moon_phase);
-
-    let mut buf = [0u8; 64];
-    let text = format_no_std::show(
-        &mut buf,
-        format_args!(
-            "Phase {:02.0}%\nIllum {:02.0}%\n{}",
-            moon_phase * 100.0,
-            moon_illumination * 100.0,
-            moon_phase_label
-        ),
-    )
-    .unwrap();
-
-    Text::with_alignment(
-        text,
-        draw_target.bounding_box().center(),
-        MonoTextStyle::new(&FONT_8X13_BOLD, theme.text()),
-        Alignment::Center,
-    )
-    .draw(draw_target)?;
-
-    Ok(())
 }
 
 /// Program metadata for `picotool info`
